@@ -27,6 +27,9 @@ public class SolicitudTutorEntity {
     @Column(name = "fecha_solicitud")
     private LocalDateTime fechaSolicitud;
 
+    @Column(name = "motivo", length = 500)
+    private String motivo;
+
     @PrePersist
     protected void onCreate() {
         if (fechaSolicitud == null) {

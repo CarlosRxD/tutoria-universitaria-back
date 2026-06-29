@@ -35,6 +35,7 @@ public class TutorMovilController {
     private final AsignacionRepository asignacionRepository;
     private final AlumnoMatriculaRepository matriculaRepository;
     private final ConfiguracionRepository configuracionRepository;
+    private final AfinidadCarrerasRepository afinidadCarrerasRepository;
     /**
      * Verifica si la ventana de solicitud está abierta
      * Ventana: 1 semana desde el 2 de marzo + cada inicio de semestre
@@ -97,14 +98,16 @@ public class TutorMovilController {
         AsignacionEntity asignacion = asignacionOpt.get();
         DocenteEntity tutor = asignacion.getDocente();
 
-        return ResponseEntity.ok(Map.of(
-                "tieneTutor", true,
-                "nombreTutor", tutor.getNombreCompleto(),
-                "correoTutor", tutor.getCorreo(),
-                "carreraTutor", tutor.getCarreraPrincipal() != null ? tutor.getCarreraPrincipal().getNombre() : "",
-                "tipoAsignacion", asignacion.getTipo().toString(),
-                "fechaAsignacion", asignacion.getFechaAsignacion().toString()
-        ));
+        // ✅ Usando HashMap en lugar de Map.of() para evitar NPE con valores null
+        Map<String, Object> resp = new java.util.HashMap<>();
+        resp.put("tieneTutor",    true);
+        resp.put("nombreTutor",   tutor.getNombreCompleto()  != null ? tutor.getNombreCompleto()  : "");
+        resp.put("correoTutor",   tutor.getCorreo()          != null ? tutor.getCorreo()          : "Sin correo registrado");
+        resp.put("carreraTutor",  tutor.getCarreraPrincipal() != null ? tutor.getCarreraPrincipal().getNombre() : "");
+        resp.put("tipoAsignacion",asignacion.getTipo()          != null ? asignacion.getTipo().toString()          : "");
+        resp.put("fechaAsignacion",asignacion.getFechaAsignacion() != null ? asignacion.getFechaAsignacion().toString() : "");
+        resp.put("estadoTutor",   tutor.getEstado() != null ? tutor.getEstado().name() : "ACTIVO");
+        return ResponseEntity.ok(resp);
     }
 
     /**
@@ -126,29 +129,36 @@ public class TutorMovilController {
                 ? matriculaOpt.get().getCarrera().getId()
                 : null;
 
-        // 2. Obtener docentes activos (priorizar de su carrera)
-        List<DocenteEntity> docentes;
+        // 2. Construir mapa carreraDestinoId → nivelPrioridad desde la tabla de afinidad
+        // nivelAfinidad: 0 = carrera propia, 1,2,... = carreras afines por prioridad, 999 = sin relación
+        Map<Integer, Integer> afinidadMap = new java.util.HashMap<>();
         if (carreraId != null) {
-            docentes = docenteRepository.findActivosByCarrera(carreraId);
-            // Si no hay suficientes, agregar de otras carreras
-            if (docentes.size() < 5) {
-                docentes.addAll(docenteRepository.findAllActivos());
-            }
-        } else {
-            docentes = docenteRepository.findAllActivos();
+            afinidadCarrerasRepository.findCarrerasAfinesPorPrioridad(carreraId)
+                    .forEach(a -> afinidadMap.put(a.getCarreraDestino().getId(), a.getNivelPrioridad()));
         }
 
-        // 3. Formatear respuesta
+        // 3. Obtener todos los docentes activos y asignar nivelAfinidad
+        List<DocenteEntity> docentes = docenteRepository.findAllActivos();
+
         var docentesDTO = docentes.stream()
-                .distinct()
-                .map(d -> Map.of(
-                        "id", d.getId(),
-                        "nombre", d.getNombreCompleto(),
-                        "correo", d.getCorreo(),
-                        "carrera", d.getCarreraPrincipal() != null ? d.getCarreraPrincipal().getNombre() : "Sin carrera",
-                        "tutoradosActuales", asignacionRepository.contarTutoradosPorDocenteYPeriodo(d.getId(), periodo),
-                        "maxTutorados", d.getMaxTutorados()
-                ))
+                .map(d -> {
+                    Integer docenteCarreraId = d.getCarreraPrincipal() != null ? d.getCarreraPrincipal().getId() : null;
+                    int nivelAfinidad;
+                    if (carreraId != null && carreraId.equals(docenteCarreraId)) {
+                        nivelAfinidad = 0; // carrera propia
+                    } else {
+                        nivelAfinidad = afinidadMap.getOrDefault(docenteCarreraId, 999); // afín o sin relación
+                    }
+                    Map<String, Object> m = new java.util.HashMap<>();
+                    m.put("id",              d.getId());
+                    m.put("nombre",          d.getNombreCompleto() != null ? d.getNombreCompleto() : "");
+                    m.put("correo",          d.getCorreo()         != null ? d.getCorreo()         : "Sin correo registrado");
+                    m.put("carrera",         d.getCarreraPrincipal() != null ? d.getCarreraPrincipal().getNombre() : "Sin carrera");
+                    m.put("tutoradosActuales", asignacionRepository.contarTutoradosPorDocenteYPeriodo(d.getId(), periodo));
+                    m.put("maxTutorados",    d.getMaxTutorados() != null ? d.getMaxTutorados() : 13);
+                    m.put("nivelAfinidad",   nivelAfinidad);
+                    return m;
+                })
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(docentesDTO);
@@ -189,12 +199,20 @@ public class TutorMovilController {
                 ));
             }
 
-            // ✨ 4. MAGIA: Si hay espacio, creamos la ASIGNACIÓN OFICIAL inmediatamente
+            // 4. Verificar que no haya realizado ya un cambio manual en este periodo
             var asignacionOpt = asignacionRepository.findByAlumnoIdAndPeriodo(alumno.getId(), request.getPeriodo());
+            if (asignacionOpt.isPresent() && TipoAsignacion.ELECCION_ALUMNO.equals(asignacionOpt.get().getTipo())) {
+                return ResponseEntity.ok(Map.of(
+                        "exito", false,
+                        "error", "Ya realizaste un cambio de tutor en este periodo. Solo se permite un cambio por periodo."
+                ));
+            }
+
+            // 5. Crear o actualizar la asignación
             AsignacionEntity asignacion;
             if (asignacionOpt.isPresent()) {
                 asignacion = asignacionOpt.get();
-                asignacion.setDocente(docente); // Actualiza si el alumno cambió de opinión
+                asignacion.setDocente(docente);
                 asignacion.setTipo(TipoAsignacion.ELECCION_ALUMNO);
                 asignacion.setFechaAsignacion(LocalDateTime.now());
             } else {
@@ -248,20 +266,18 @@ public class TutorMovilController {
             List<AsignacionEntity> historial = asignacionRepository
                     .findByAlumnoIdOrderByFechaAsignacionDesc(alumnoId);
 
-            // 3. Formatear respuesta
+            // 3. Formatear respuesta — HashMap para evitar NPE con valores null
             var historialDTO = historial.stream()
                     .map(asignacion -> {
                         DocenteEntity tutor = asignacion.getDocente();
-                        return Map.of(
-                                "periodo", asignacion.getPeriodo(),
-                                "nombreTutor", tutor.getNombreCompleto(),
-                                "correoTutor", tutor.getCorreo(),
-                                "carreraTutor", tutor.getCarreraPrincipal() != null
-                                        ? tutor.getCarreraPrincipal().getNombre()
-                                        : "Sin carrera",
-                                "tipoAsignacion", formatearTipoAsignacion(asignacion.getTipo().toString()),
-                                "fechaAsignacion", asignacion.getFechaAsignacion().toString()
-                        );
+                        Map<String, Object> m = new java.util.HashMap<>();
+                        m.put("periodo",        asignacion.getPeriodo() != null ? asignacion.getPeriodo() : "");
+                        m.put("nombreTutor",    tutor.getNombreCompleto() != null ? tutor.getNombreCompleto() : "");
+                        m.put("correoTutor",    tutor.getCorreo()         != null ? tutor.getCorreo()         : "Sin correo registrado");
+                        m.put("carreraTutor",   tutor.getCarreraPrincipal() != null ? tutor.getCarreraPrincipal().getNombre() : "Sin carrera");
+                        m.put("tipoAsignacion", formatearTipoAsignacion(asignacion.getTipo() != null ? asignacion.getTipo().toString() : ""));
+                        m.put("fechaAsignacion",asignacion.getFechaAsignacion() != null ? asignacion.getFechaAsignacion().toString() : "");
+                        return m;
                     })
                     .collect(Collectors.toList());
 

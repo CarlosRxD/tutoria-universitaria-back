@@ -6,12 +6,19 @@ import mx.unpa.tutoria.application.service.ConstanciaPdfService;
 import mx.unpa.tutoria.application.service.EmailService;
 import mx.unpa.tutoria.application.service.ExcelImportService;
 import mx.unpa.tutoria.application.service.OficioPdfService;
+import mx.unpa.tutoria.infrastructure.entity.DocenteEntity;
+import mx.unpa.tutoria.infrastructure.repository.AsignacionRepository;
+import mx.unpa.tutoria.infrastructure.repository.DocenteRepository;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
+import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import java.util.Map;
 
 @Slf4j
@@ -24,7 +31,106 @@ public class ArchivoController {
     private final OficioPdfService oficioPdfService;
     private final EmailService emailService;
     private final ConstanciaPdfService constanciaPdfService;
+    private final DocenteRepository docenteRepository;
+    private final AsignacionRepository asignacionRepository;
+    /**
+     * Descarga un ZIP con los oficios de TODOS los docentes del periodo
+     */
+    @GetMapping("/oficios-zip/periodo/{periodo}")
+    public ResponseEntity<byte[]> descargarTodosOficiosZip(@PathVariable String periodo) {
+        try {
+            log.info("📦 Generando ZIP de oficios para periodo: {}", periodo);
 
+            // 1. Obtener solo docentes que TIENEN tutorados en este periodo
+            List<DocenteEntity> docentes = docenteRepository.findAllActivos().stream()
+                    .filter(d -> asignacionRepository
+                            .contarTutoradosPorDocenteYPeriodo(d.getId(), periodo) > 0)
+                    .toList();
+
+            if (docentes.isEmpty()) {
+                return ResponseEntity.noContent().build();
+            }
+
+            // 2. Generar el ZIP en memoria
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (ZipOutputStream zipOut = new ZipOutputStream(baos)) {
+                for (DocenteEntity docente : docentes) {
+                    try {
+                        byte[] pdf = oficioPdfService.generarOficioTutorados(docente.getId(), periodo);
+                        String nombre = String.format("Oficio_%s_%s.pdf",
+                                docente.getNombreCompleto().replace(" ", "_"), periodo);
+
+                        zipOut.putNextEntry(new ZipEntry(nombre));
+                        zipOut.write(pdf);
+                        zipOut.closeEntry();
+
+                        log.debug("✅ PDF añadido al ZIP: {}", nombre);
+                    } catch (Exception e) {
+                        log.error("❌ Error generando PDF para {}: {}", docente.getNombreCompleto(), e.getMessage());
+                    }
+                }
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.setContentDispositionFormData("attachment",
+                    String.format("Oficios_Tutorados_%s.zip", periodo));
+
+            log.info("✅ ZIP generado con {} oficios", docentes.size());
+            return ResponseEntity.ok().headers(headers).body(baos.toByteArray());
+
+        } catch (Exception e) {
+            log.error("❌ Error generando ZIP de oficios: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Descarga un ZIP con las constancias de TODOS los docentes del periodo
+     */
+    @GetMapping("/constancias-zip/periodo/{periodo}")
+    public ResponseEntity<byte[]> descargarTodasConstanciasZip(@PathVariable String periodo) {
+        try {
+            log.info("📦 Generando ZIP de constancias para periodo: {}", periodo);
+
+            List<DocenteEntity> docentes = docenteRepository.findAllActivos().stream()
+                    .filter(d -> asignacionRepository
+                            .contarTutoradosPorDocenteYPeriodo(d.getId(), periodo) > 0)
+                    .toList();
+
+            if (docentes.isEmpty()) {
+                return ResponseEntity.noContent().build();
+            }
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (ZipOutputStream zipOut = new ZipOutputStream(baos)) {
+                for (DocenteEntity docente : docentes) {
+                    try {
+                        byte[] pdf = constanciaPdfService.generarConstanciaParticipacion(docente.getId(), periodo);
+                        String nombre = String.format("Constancia_%s_%s.pdf",
+                                docente.getNombreCompleto().replace(" ", "_"), periodo);
+
+                        zipOut.putNextEntry(new ZipEntry(nombre));
+                        zipOut.write(pdf);
+                        zipOut.closeEntry();
+                    } catch (Exception e) {
+                        log.error("❌ Error generando constancia para {}: {}", docente.getNombreCompleto(), e.getMessage());
+                    }
+                }
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.setContentDispositionFormData("attachment",
+                    String.format("Constancias_Participacion_%s.zip", periodo));
+
+            return ResponseEntity.ok().headers(headers).body(baos.toByteArray());
+
+        } catch (Exception e) {
+            log.error("❌ Error generando ZIP de constancias: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
     /**
      * Importa docentes desde un archivo Excel
      */

@@ -1,0 +1,10 @@
+# Ejemplo de configuración local del backend.
+# Crea una copia de este archivo llamada 'application-local.properties'
+# en esta misma carpeta y define tus valores reales.
+
+# Credenciales de correo de desarrollo (Gmail App Password)
+spring.mail.username=correo@ejemplo.com
+spring.mail.password=tu-contrasena-de-aplicacion-aqui
+
+# Firma secreta para Tokens JWT (Debe tener al menos 256 bits, es decir, 32 caracteres)
+app.jwt.secret=tu-clave-secreta-local-super-segura-de-al-menos-32-caracteres-aqui

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import mx.unpa.tutoria.infrastructure.entity.DocenteEntity;
 import mx.unpa.tutoria.infrastructure.repository.DocenteRepository;
 import mx.unpa.tutoria.infrastructure.repository.AsignacionRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -25,6 +26,12 @@ public class EmailService {
     private final DocenteRepository docenteRepository;
     private final AsignacionRepository asignacionRepository;
     private final ConstanciaPdfService constanciaPdfService;
+
+    @Value("${spring.mail.username}")
+    private String mailUsername;
+
+    @Value("${app.mail.from.nombre:Comite de Tutorias CIT-UNPA}")
+    private String mailFromNombre;
 
     /**
      * Envía oficios a todos los docentes con tutorados en un periodo
@@ -80,7 +87,7 @@ public class EmailService {
      * Método privado que hace el envío real del correo
      * (No expuesto públicamente, usado internamente)
      */
-    private void enviarOficioADocenteSincrono(Long docenteId, String periodo) {
+    private void enviarOficioADocenteSincrono(Long docenteId, String periodo) throws java.io.UnsupportedEncodingException {
         DocenteEntity docente = docenteRepository.findById(docenteId)
                 .orElseThrow(() -> new RuntimeException("Docente no encontrado: " + docenteId));
 
@@ -93,6 +100,7 @@ public class EmailService {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
+            helper.setFrom(mailUsername, mailFromNombre);
             helper.setTo(docente.getCorreo());
             helper.setSubject("Asignación de Tutorados - Periodo " + periodo);
 
@@ -195,7 +203,7 @@ public class EmailService {
     /**
      * Método privado que hace el envío real de la constancia
      */
-    private void enviarConstanciaADocenteSincrono(Long docenteId, String periodo) {
+    private void enviarConstanciaADocenteSincrono(Long docenteId, String periodo) throws java.io.UnsupportedEncodingException {
         DocenteEntity docente = docenteRepository.findById(docenteId)
                 .orElseThrow(() -> new RuntimeException("Docente no encontrado: " + docenteId));
 
@@ -208,6 +216,7 @@ public class EmailService {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
+            helper.setFrom(mailUsername, mailFromNombre);
             helper.setTo(docente.getCorreo());
             helper.setSubject("CONSTANCIA DEL INFORME SEMESTRAL DE TUTORÍAS " + periodo);
 

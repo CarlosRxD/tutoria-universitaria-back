@@ -29,4 +29,7 @@ public interface AlumnoMatriculaRepository extends JpaRepository<AlumnoMatricula
     }
     
     List<AlumnoMatriculaEntity> findByCarreraIdAndActiva(Integer carreraId, boolean activa);
+
+    @Query("SELECT am FROM AlumnoMatriculaEntity am WHERE am.activa = true")
+    List<AlumnoMatriculaEntity> findAllActivas();
 }
