@@ -69,26 +69,30 @@ ssh server
 
 El despliegue se maneja a través de contenedores Docker utilizando un sistema de etiquetado por versiones (tags).
 
+> [!IMPORTANT]
+> * **Ruta Local**: Reemplaza `[tu-ruta-local]` por la ruta donde clonaste la carpeta `CIT` en tu máquina (ej. `C:\Users\nombre-usuario\Documentos`).
+> * **Usuario Docker**: Reemplaza `[tu-usuario-docker]` por el usuario de Docker Hub donde subirás la imagen (ej. `carlosrcr` para la cuenta de producción oficial). Asegúrate de iniciar sesión antes con `docker login`.
+
 ### Backend
-1. Navega al proyecto backend: `c:\Users\carlo\OneDrive\Documentos\Servicio_Social\CIT\Backend\tutoria-universitaria`
+1. Navega al proyecto backend: `[tu-ruta-local]/CIT/Backend/tutoria-universitaria`
 2. Construye la imagen Docker especificando la nueva versión (ejemplo: incrementa a `v25` si la actual es `v24`):
    ```bash
-   docker build -t carlosrcr/tutoria-backend:v25 .
+   docker build -t [tu-usuario-docker]/tutoria-backend:v25 .
    ```
 3. Sube la imagen construida al registro de Docker Hub:
    ```bash
-   docker push carlosrcr/tutoria-backend:v25
+   docker push [tu-usuario-docker]/tutoria-backend:v25
    ```
 
 ### Frontend
-1. Navega al proyecto frontend: `c:\Users\carlo\OneDrive\Documentos\Servicio_Social\CIT\Frontend\tutoria-universitaria`
+1. Navega al proyecto frontend: `[tu-ruta-local]/CIT/Frontend/tutoria-universitaria`
 2. Construye la imagen Docker con su respectiva versión (ejemplo: incrementa a `v10` si la actual es `v9`):
    ```bash
-   docker build -t carlosrcr/tutoria-frontend:v10 .
+   docker build -t [tu-usuario-docker]/tutoria-frontend:v10 .
    ```
 3. Sube la imagen construida a Docker Hub:
    ```bash
-   docker push carlosrcr/tutoria-frontend:v10
+   docker push [tu-usuario-docker]/tutoria-frontend:v10
    ```
 
 ---
